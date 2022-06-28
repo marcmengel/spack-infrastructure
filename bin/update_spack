@@ -15,6 +15,12 @@ case "${pkglist}" in
 *) usage "$@"; exit 1;;
 esac
 
+if [ ! -r ${pkglist} ]
+then
+    # no work to do
+    exit 0
+fi
+
 spackbindir=`echo $0 | sed -e 's;update_spack;;'`
 
 export PATH=$SPACK_ROOT/bin:$spackbindir:$PATH
@@ -32,6 +38,7 @@ then
     exit
 fi
 
+
 if [ ! -r ${pkglist}.done ]
 then 
     :> ${pkglist}.done
@@ -41,6 +48,7 @@ if [ ! -r ${pkglist}.failed ]
 then 
     :> ${pkglist}.failed
 fi
+
 
 cat ${pkglist} |
   while read what spec
