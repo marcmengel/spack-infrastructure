@@ -62,7 +62,6 @@ Linux)
         then
         getv() {
            grep "^$1-[0-9]" $RPMCACHE | tail -1 | grep -v 'is not installed' | 
-perl-Data-Dumper-2.145-3.el7.x86_64
               sed -e 's/.*-\([0-9][0-9.kp]*\)-[0-9][0-9.]*\..*/\1/' ||
               runversion $1
         }
