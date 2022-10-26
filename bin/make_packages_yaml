@@ -13,6 +13,7 @@ optf=$dir/templates/package_opts
 dst=$1/etc/spack/packages.yaml
 
 # packages to make not buildable...
+
 force_system='^(bdftopf|bzip2|damageproto|diffutils|expat|findutils|font-util|gdbm|gettext|glew|libbsd|libc|libdrm|libffi|libfontenc|libgcrypt|libice|libjpeg-turbo|libpciaccess|libpthread-stubs|libseigsegv|libsm|libx11|libxau|libxcb|libxdamage|libxdmcp|libxext|libxfixes|libxfont|libuuid|libxxmu|libxpm|libxrandr|libxrender|libxshmfence|libxt|libxv|libxvmc|lbixxf86vm|lz4|mesa|mesa-glu|ncurses|openssl|openssh|pcre|pcre2|pkgconf|pkg-config|tar|tcl|texlive|tk|unzip|util-macros|xextproto|xproxymanagementprotocol|xrandr|xtrans|xz|zlib)$'
 
 no_devel='^(diffutils|findutils|pkg-config|pkgconfig|tar)$'
@@ -158,6 +159,7 @@ else
 fi
 
 compiler2=""
+
 if [ "x`getv2 clang clang`" != x ]
 then
     compiler2="clang@`getv2 clang clang`"
@@ -367,7 +369,6 @@ do
     if echo $lp | egrep "$force_system" > /dev/null
     then
         echo "    buildable: False"           >&3
-
     elif [ -d "$cprefix" ]
     then   
         # if we have it in cvmfs, use that one
