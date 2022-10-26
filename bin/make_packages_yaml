@@ -13,25 +13,35 @@ optf=$dir/templates/package_opts
 dst=$1/etc/spack/packages.yaml
 
 # packages to make not buildable...
-force_system='^(bdftopf|bzip2|damageproto|diffutils|expat|findutils|font-util|gdbm|gettext|glew|libbsd|libc|libdrm|libffi|libfontenc|libgcrypt|libice|libjpeg-turbo|libpciaccess|libpthread-stubs|libseigsegv|libsm|libx11|libxau|libxcb|libxdamage|libxdmcp|libxext|libxfixes|libxfont|libuuid|libxxmu|libxpm|libxrandr|libxrender|libxshmfence|libxt|libxv|libxvmc|lbixxf86vm|lz4|mesa|mesa-glu|ncurses|openssl|openssh|pcre|pcre2|pkgconf|pkg-config|tar|tcl|texlive|tk|unzip|util-macros|xproxymanagementprotocol|xrandr|xtrans|xz|zlib)$'
+force_system='^(bdftopf|bzip2|damageproto|diffutils|expat|findutils|font-util|gdbm|gettext|glew|libbsd|libc|libdrm|libffi|libfontenc|libgcrypt|libice|libjpeg-turbo|libpciaccess|libpthread-stubs|libseigsegv|libsm|libx11|libxau|libxcb|libxdamage|libxdmcp|libxext|libxfixes|libxfont|libuuid|libxxmu|libxpm|libxrandr|libxrender|libxshmfence|libxt|libxv|libxvmc|lbixxf86vm|lz4|mesa|mesa-glu|ncurses|openssl|openssh|pcre|pcre2|pkgconf|pkg-config|tar|tcl|texlive|tk|unzip|util-macros|xextproto|xproxymanagementprotocol|xrandr|xtrans|xz|zlib)$'
 
 no_devel='^(diffutils|findutils|pkg-config|pkgconfig|tar)$'
 
-force_x86_64='^(asciidoc|autoconf|autogen|automake|binutils|bison|bzip2|cmake|conv|curl|davix|diffutils|environment-modules|expat|findutils|flex|font-util|fontconfig|font-util|hwloc|libfontenc|libxfont|mkfontdir|mkfontscale|freeglut|freetype|gdb|gdbm|gettext|git|gl2ps|glew|gmake|gawk|help2man|icu4c|jemalloc|libbsd|libdrm|libedit|libevent|libffi|libice|libiconv|libjpeg|libjpeg-turbo|libgcrypt|libpciaccess|libpng|libpthread-stubs|libsigsegv|libsm|libtool|libuuid|libx11|libxau|libxcb|libxdamage|libxdmcp|libxext|libxfixes|libxft|libxi|libxmu|libxpm|libxrandr|libxrender|libxshmfence|libxt|libxv|libxvmc|libxxf86vm|libyaml|lua|lz4|m4|matplotlib|mesa|mesa-glu|mpich|mysql|nasm|ncurses|openblas|openssl|patchelf|pcre|pcre2|perl|pkgconf|pkg-config|readline|sqlite|swig|tar|tcl|texinfo|texlive|tk|unzip|util-macros|xxhash|xz|zlib)$'
+force_x86_64='^(asciidoc|autoconf|autogen|automake|binutils|bison|bzip2|cmake|conv|curl|davix|diffutils|environment-modules|expat|findutils|flex|font-util|fontconfig|font-util|hwloc|libfontenc|libxfont|mkfontdir|mkfontscale|freeglut|freetype|gdb|gdbm|gettext|git|gl2ps|glew|gmake|gawk|help2man|icu4c|jemalloc|libbsd|libdrm|libedit|libevent|libffi|libice|libiconv|libjpeg|libjpeg-turbo|libgcrypt|libpciaccess|libpng|libpthread-stubs|libsigsegv|libsm|libtool|libunistring|libuuid|libx11|libxau|libxcb|libxdamage|libxdmcp|libxext|libxfixes|libxft|libxi|libxmu|libxpm|libxrandr|libxrender|libxshmfence|libxt|libxv|libxvmc|libxxf86vm|libyaml|lua|lz4|m4|matplotlib|mesa|mesa-glu|mpich|mysql|nasm|ncurses|openblas|openssl|patchelf|pcre|pcre2|perl|perl-data-dumper|pkgconf|pkg-config|readline|sqlite|swig|tar|tcl|texinfo|texlive|tk|unuran|unzip|util-macros|xextproto|xproto|xxhash|xz|zlib|zstd)$'
 
+teeit="cat"
+#debugging
+#teeit="tee /dev/tty"
 
 runversion() {
    # try to get version by running executable --version
    # in some cases this works due to error messages...
    if [  "$1" != '' ]
    then
-       ($1 --version || $1 -v) < /dev/null 2>&1 | 
+       cmd="$1"
+       if [ "$cmd" = "python" ]
+       then
+           cmd=`ls /usr/bin/python* | grep -v config | tail -1`
+       fi
+       ($cmd --version || $cmd -v) < /dev/null 2>&1 | 
           strings | 
           sed -e 's/\+*//' -e 's/64.bit//' | 
           grep -i $1 | 
           egrep -iv 'error:|for help|not found|illegal|invalid|usage:|--version|-v' |
-          head -1 | 
-          sed -e "s/$1//ig" -e 's/^[^0-9]*\([0-9][0-9.]*\).*$/\1/'
+          head -1 | $teeit |
+          perl -pe 's{(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec|/).*}{};' |
+          sed -e "s/$1//ig" -e 's/-[0-9].*//'  | $teeit | 
+          sed -e 's/^.*[^0-9.]\([0-9][0-9]*\.[0-9.kp]*\).*$/\1/' | $teeit
    fi
 }
 
@@ -52,13 +62,13 @@ Linux)
         getv() {
            grep "^$1-[0-9]" $RPMCACHE | tail -1 | grep -v 'is not installed' | 
 perl-Data-Dumper-2.145-3.el7.x86_64
-              sed -e 's/.*-\([0-9][0-9.]*\)-[0-9][0-9.]*\..*/\1/' ||
+              sed -e 's/.*-\([0-9][0-9.kp]*\)-[0-9][0-9.]*\..*/\1/' ||
               runversion $1
         }
         else
         getv() {
            rpm -q $1 | tail -1 | grep -v 'is not installed' | 
-              sed -e 's/.*-\([0-9][0-9.]*\)-[0-9][0-9.]*\..*/\1/' ||
+              sed -e 's/.*-\([0-9][0-9.kp]*\)-[0-9][0-9.]*\..*/\1/' ||
               runversion $1
         }
         fi
@@ -104,6 +114,14 @@ getv2() {
       [ -r $ff ] && x=`grep Version $ff | head -1 | sed -e 's/.*Version //'` 
   ;;
   esac
+  if [ "$x" = "" ]
+  then
+      pkf="/usr/share/pkgconfig/$lp.pc"
+      if [ -r "$pkf" ]
+      then
+          x=`grep Version: $pkf | sed -e 's/Version: //'`
+      fi
+  fi
   if [ "$x" = "" ]
   then
       x=`grep $1 $dir/templates/preferred_versions | sed -e 's/.*@//'`
@@ -266,14 +284,14 @@ do
     # if its a wildcarded rpm name, look for it
     case "$p" in
     *\**) 
-         p=`rpm -qa | grep "$p" | head -1` 
-         dv=`rpm -qa | grep "$dv" | head -1`
+         p=`rpm -qa | grep "$p" | tail -1` 
+         dv=`rpm -qa | grep "$dv" |  tail -1`
          ;;
     esac
 
     # debug individual packages here
     # debug_pkg=gettext
-    debug_pkg=zstd
+    debug_pkg=
     if [ "$debug_pkg" != "" ] 
     then
         if [ "$lp" = "$debug_pkg" ]
@@ -323,17 +341,26 @@ do
         ;;
     esac
 
+    #variants from known variants list
     opts=`grep "^$lp[ \t]" $optf | sed -e "s/^$lp[ \t]*//"`
+
+    #dependencies, one needed so far on gettext
+    if [ "$lp" = "gettext" ]
+    then
+        deps=" ^libc"
+    else
+        deps=""
+    fi
 
     # use the right external syntax based on spack version in path
     case $SPACK_ROOT in
     *rollout*)
         echo "    paths:"           >&3
-        echo "      \"${lp}$opts @$v $comp\": $sysprefix"    >&3
+        echo "      \"${lp}$opts @$v $comp$deps\": $sysprefix"    >&3
         ;;
     *)
         echo "    externals:" >&3
-        echo "    - spec: \"${lp}$opts @$v $comp os=$os\"" >&3
+        echo "    - spec: \"${lp}$opts @$v $comp os=$os$deps\"" >&3
         echo "      prefix: $sysprefix" >&3
     esac
 
@@ -347,11 +374,11 @@ do
         case $SPACK_ROOT in
         *rollout*)
             echo "    paths:"           >&3
-            echo "      \"$lp @$v $comp\": $cprefix"    >&3
+            echo "      \"$lp @$v $comp$deps\": $cprefix"    >&3
             ;;
         *)
             echo "    externals:" >&3
-            echo "    - spec: \"${lp} @$v $comp\"" >&3
+            echo "    - spec: \"${lp} @$v $comp$deps\"" >&3
             echo "      prefix: $cprefix" >&3
             ;;
         esac
