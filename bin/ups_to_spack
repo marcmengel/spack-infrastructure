@@ -513,15 +513,15 @@ class package:
 
     def spack_comp(self, splitpart = -1):
         self.topbits()
-        res = "gcc-4.1.1"  # sl5 compiler by default??
-        if self.top_flav.find("2.17") >= 0:
-            res = "gcc-4.8.5"
-        if self.top_flav.find("2.12") >= 0:
-            res = "gcc-4.4.7"
+        res = "gcc-4.8.5"
         if self.top_quals.find("c7") >= 0:
             res = "clang-7.0.0"
         if self.top_quals.find("c2") >= 0:
             res = "clang-5.0.1"
+        if self.top_quals.find("e21") >= 0:
+            res= "gcc-12.2.0"
+        if self.top_quals.find("e20") >= 0:
+            res= "gcc-9.3.0"
         if self.top_quals.find("e19") >= 0:
             res= "gcc-8.2.0"
         if self.top_quals.find("e18") >= 0:
@@ -767,17 +767,28 @@ endif()
         f.write('message("${CMAKE_CURRENT_LIST_FILE} ends:")\n')
         f.close()
 
-    def quals_to_flags(self, quals):
+    def quals_to_flags(self, pkg):
         rl = [] 
-        if f quals.find("debug"):
+        quals = pkg.quals
+        if 0 <=  quals.find("debug"):
             rl.append("-g")
-        if f quals.find("opt"):
+        if 0 <= quals.find("opt"):
             rl.append("-O3")
-        return " ".join(rl)
+        flags = " ".join(rl)
+
+        if flags:
+            flags = "cxxflags='%s' cflags='%s'" % (flags, flags)
+
+        comp = pkg.spack_comp().replace('-','@')
+
+        if comp:
+            flags = "%s %% %s" % (flags, comp)
+
+        return flags
         
 
     @log_call
-    def install(self, pkg, compiler):
+    def install(self, pkg):
 
         immeddeps = self.parsed_ups_dependencies([pkg] ,immed=True)
         dlist = []
@@ -787,14 +798,12 @@ endif()
                  dpkg.topbits()
                  dlist.append("^ %s@%s arch=%s" % (dpkg.prod, dpkg.dotver, dpkg.spack_arch()))
 
-        flags = self.quals_to_flags(dpkg.quals)
+        flags = self.quals_to_flags(pkg)
 
-        if flags:
-             flags = "cxxflags='%s' cflags='%s'" % (flags, flags))
 
         # install with specific dependencies.
-        cmd = "spack install --reuse --no-checksum ups_to_spack.%s@%s %s arch=%s %% %s %s" % (
-                pkg.prod, pkg.dotver, flags, pkg.spack_arch(), compiler, " ".join(dlist))
+        cmd = "spack install --reuse --no-checksum ups_to_spack.%s@%s arch=%s %s %s"  % (
+                pkg.prod, pkg.dotver,  pkg.spack_arch(), flags, " ".join(dlist))
 
         logging.warning("running: %s" % cmd)
         os.system(cmd)
@@ -811,7 +820,7 @@ endif()
             raise SystemExit("Couldn't migrate %s %s -f %s" % (pkg.prod, pkg.ver, pkg.flav))
            
     @log_call
-    def migrate_one(self, pkg, recurseflag = False, compiler="gcc@4.8.5"):
+    def migrate_one(self, pkg, recurseflag = False ):
 
         if pkg.keyval() in self.already_done:
             logging.debug("migrate_one: already done (by us): %s" % pkg)
@@ -826,7 +835,7 @@ endif()
 
         if not thash:
             self.make_recipe(pkg)
-            nhash = self.install(pkg,compiler)
+            nhash = self.install(pkg)
             self.add_cached_hash(pkg, nhash)
             self.convert_table(pkg, nhash)
         else:
@@ -1826,13 +1835,13 @@ proc getenv { x } {
         return r2
 
     @log_call
-    def migrate_all(self, argv, compiler):
+    def migrate_all(self, argv):
         pkgl = self.parsed_ups_list(argv)
         self.packages = self.parsed_ups_dependencies(pkgl)
         logging.debug("migrate_all: packages: %s" % repr(self.packages))
         for pkg in self.packages:
             logging.debug("migrating: %s" % pkg)
-            self.migrate_one(pkg, compiler=compiler)
+            self.migrate_one(pkg)
 
 
 if not os.environ.get("UPS_DIR", None) or not os.environ.get("SPACK_ROOT", None):
@@ -1846,7 +1855,6 @@ pdr = None
 # not using argparse 'cause the argv mostly gets passed to ups
 # just pick off any leading "--" options
 #
-compiler="gcc@4.8.5"
 while sys.argv[1][:2] == "--":
     if sys.argv[1][:6] == "--pdr=" :
         pdr = sys.argv[1][6:]
@@ -1855,9 +1863,6 @@ while sys.argv[1][:2] == "--":
     elif sys.argv[1] == "--debug":
         logging.basicConfig(level=logging.DEBUG)
 
-    elif sys.argv[1][:11] == "--compiler=":
-        compiler = sys.argv[1][11:]
-
     else:
         print("Unknown flag %s" % sys.argv[1])
 
@@ -1865,5 +1870,5 @@ while sys.argv[1][:2] == "--":
 
 uts = ups_to_spack(pdr=pdr)
 
-uts.migrate_all(sys.argv[1:], compiler)
+uts.migrate_all(sys.argv[1:])
 os.system('spack reindex')
