@@ -7,11 +7,12 @@ then
     exit 1
 fi
 
-spack find -N | 
-    grep '^ups_to_spack' | 
-    while read p
+#uninstall spack packages in ups_to_spack namespace
+spack find --long -N | 
+    grep ' ups_to_spack\.' | 
+    while read hash p
     do 
-        spack uninstall --dependents $p
+        spack uninstall -y --dependents $p/$hash
     done
 
 # clean out module files
@@ -21,6 +22,8 @@ find $SPACK_ROOT/share/spack/modules $SPACK_ROOT/share/spack/lmod -type f -print
 
 # remove hash cache
 
+cd $SPACK_ROOT
+echo "in $PWD"
 rm var/ups_to_spack.cache
 rm -rf  var/spack/repos/ups_to_spack/packages/*
 
