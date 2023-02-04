@@ -68,11 +68,13 @@ def spack_reindex():
     return "", ""
 
 known_cycle_deps = {}
+depsmap = {}
 
 def filter_cycles(deplines):
     global known_cycle_deps
+    global depsmap
     res=[]
-    d=['','','','','','','','','','','','','','','']
+    d=['','','','','','','','','','','','','','','','','','','','','','','']
     for line in deplines:
         m = re.match("(^[|_ ]*)([^ ]*)", line)
         depth = len(m.group(1))/3
@@ -106,6 +108,7 @@ def filter_cycles(deplines):
 
     return res
 
+@remember
 def ups_depend(prod, ver, flav, qual, hosttype=''):
     """ run ups depend, return list of output lines """
     r1 = ups_x("depend -B", prod, ver, flav, qual, hosttype)
@@ -119,6 +122,7 @@ def canon_quals(qual):
     ll.sort()
     return ":".join(ll)
 
+@remember
 def ups_x(what, prod, ver, flav, qual, hosttype=''):
     """ run ups what, return list of output lines """
 
@@ -763,10 +767,36 @@ endif()
         f.write('message("${CMAKE_CURRENT_LIST_FILE} ends:")\n')
         f.close()
 
+    def quals_to_flags(self, quals):
+        rl = [] 
+        if f quals.find("debug"):
+            rl.append("-g")
+        if f quals.find("opt"):
+            rl.append("-O3")
+        return " ".join(rl)
+        
+
     @log_call
-    def install(self, pkg):
-        cmd = "spack --backtrace install --no-checksum %s@%s arch=%s" % (pkg.prod, pkg.dotver, pkg.spack_arch())
-        logging.debug("running", cmd)
+    def install(self, pkg, compiler):
+
+        immeddeps = self.parsed_ups_dependencies([pkg] ,immed=True)
+        dlist = []
+        myarch = pkg.spack_arch()
+        for dpkg in immeddeps:
+             if dpkg.spack_arch() == myarch:
+                 dpkg.topbits()
+                 dlist.append("^ %s@%s arch=%s" % (dpkg.prod, dpkg.dotver, dpkg.spack_arch()))
+
+        flags = self.quals_to_flags(dpkg.quals)
+
+        if flags:
+             flags = "cxxflags='%s' cflags='%s'" % (flags, flags))
+
+        # install with specific dependencies.
+        cmd = "spack install --reuse --no-checksum ups_to_spack.%s@%s %s arch=%s %% %s %s" % (
+                pkg.prod, pkg.dotver, flags, pkg.spack_arch(), compiler, " ".join(dlist))
+
+        logging.warning("running: %s" % cmd)
         os.system(cmd)
         f = os.popen("spack find --very-long %s@%s arch=%s" % (pkg.prod, pkg.dotver, pkg.spack_arch()), "r")
         ll = f.readlines()
@@ -781,7 +811,7 @@ endif()
             raise SystemExit("Couldn't migrate %s %s -f %s" % (pkg.prod, pkg.ver, pkg.flav))
            
     @log_call
-    def migrate_one(self, pkg, recurseflag = False):
+    def migrate_one(self, pkg, recurseflag = False, compiler="gcc@4.8.5"):
 
         if pkg.keyval() in self.already_done:
             logging.debug("migrate_one: already done (by us): %s" % pkg)
@@ -796,7 +826,7 @@ endif()
 
         if not thash:
             self.make_recipe(pkg)
-            nhash = self.install(pkg)
+            nhash = self.install(pkg,compiler)
             self.add_cached_hash(pkg, nhash)
             self.convert_table(pkg, nhash)
         else:
@@ -926,17 +956,36 @@ endif()
         url = 'file:///tmp/empty.tar'
         return url
 
+
     def install(self, spec, prefix):
         v = "v"+str(spec.version.underscored)
         if os.path.isdir("%(prodarea)s"):
-            os.system("cd %(prodarea)s/{0}/%(prodpath)s && find . -print | cpio -dumpv {1}".format(v, prefix))
+            os.system("cd %(prodarea)s{0}%(prodpath)s && find . -print | cpio -dumpv {1}".format(v, prefix))
         
 """ % {"prodarea":prodarea, "prodpath":prodpath})
 
+            # we need some variants to make the concretizer happy, and in the case of boost,
+            # quite a few
+            vmap = {
+                "boost": [ "atomic", "chrono", "date_time", "container", "context", "contract",
+                    "coroutine", "exception", "fiber", "filesystem", "graph", "graph_parallel",
+                    "iostreams", "json", "locale", "log", "math", "mpi", "nowide", "program_options",
+                    "python", "random", "regex", "serialization", "signals", "stacktrace", "system",
+                    "test", "thread", "timer", "type_erasure", "wave"],
+                "libxml2": ["python"],
+                "python": ["shared"],
+                "sqlite": ["column_metadata"]
+            }
+
+            if pkg.prod in vmap:
+                for vari in vmap[pkg.prod]:
+                    recipe_f.write("\n    variant(\"%s\",default=False)\n" % vari)
+                      
             # include a cxxstd variant if we see a c7 or e19 qualifier...
             if re.search("[ce][0-9]", pkg.quals):
                 recipe_f.write("\n    variant('cxxstd',default='17')\n\n")
 
+            # script ones need to be extendable..
             if pkg.prod in ("python","ruby","perl"):
                 recipe_f.write("\n    extendable = True\n")
 
@@ -1017,13 +1066,19 @@ endif()
         logging.debug("basedir is now %s " % (basedir))
         return basedir
 
+    @log_call
+    @remember
     def use_spack_for_hash(self, pkg):
+        pkg.topbits()
         f = os.popen("spack find --long %s@%s %s" % 
                  (pkg.prod, pkg.dotver, pkg.spack_arch() ),
              "r")
         ll = f.readlines()
         f.close()
-        return ll[1].split(" ")[0]
+        if len(ll) > 0:
+            return ll[1].split(" ")[0]
+        else:
+            return None
         
     def unpack(self, s):
         """ unpack/parse a line from a ups table file """
@@ -1722,8 +1777,9 @@ proc getenv { x } {
         ulf.close()
         return res
 
-    def parsed_ups_dependencies(self, pkgl):
+    def parsed_ups_dependencies(self, pkgl, immed=False):
         res = []
+        immedl = []
         for pkg in pkgl:
             if pkg.flav == "NULL":
                 flist = self.all_flavors
@@ -1741,6 +1797,8 @@ proc getenv { x } {
                     )
                     logging.debug("pud: pkg: %s" % p)
                     res.append(p)
+                    if depth == 1:
+                        immedl.append(p)
 
         
         res.reverse()
@@ -1749,7 +1807,10 @@ proc getenv { x } {
         #res.sort(key=lambda x: "%2d:%s" % (99-x.depth,":".join((x.prod, x.ver, x.quals,x.top_flav,x.top_quals))))
         #res = self.list_uniq(res)
 
-        return res
+        if immed:
+            return immedl
+        else:
+            return res
 
     def list_uniq(self, res):
         ''' de-duplicate sorted list '''
@@ -1765,13 +1826,13 @@ proc getenv { x } {
         return r2
 
     @log_call
-    def migrate_all(self, argv):
+    def migrate_all(self, argv, compiler):
         pkgl = self.parsed_ups_list(argv)
         self.packages = self.parsed_ups_dependencies(pkgl)
         logging.debug("migrate_all: packages: %s" % repr(self.packages))
         for pkg in self.packages:
             logging.debug("migrating: %s" % pkg)
-            self.migrate_one(pkg)
+            self.migrate_one(pkg, compiler=compiler)
 
 
 if not os.environ.get("UPS_DIR", None) or not os.environ.get("SPACK_ROOT", None):
@@ -1785,6 +1846,7 @@ pdr = None
 # not using argparse 'cause the argv mostly gets passed to ups
 # just pick off any leading "--" options
 #
+compiler="gcc@4.8.5"
 while sys.argv[1][:2] == "--":
     if sys.argv[1][:6] == "--pdr=" :
         pdr = sys.argv[1][6:]
@@ -1793,6 +1855,9 @@ while sys.argv[1][:2] == "--":
     elif sys.argv[1] == "--debug":
         logging.basicConfig(level=logging.DEBUG)
 
+    elif sys.argv[1][:11] == "--compiler=":
+        compiler = sys.argv[1][11:]
+
     else:
         print("Unknown flag %s" % sys.argv[1])
 
@@ -1800,5 +1865,5 @@ while sys.argv[1][:2] == "--":
 
 uts = ups_to_spack(pdr=pdr)
 
-uts.migrate_all(sys.argv[1:])
+uts.migrate_all(sys.argv[1:], compiler)
 os.system('spack reindex')
