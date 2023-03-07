@@ -19,6 +19,7 @@ sys.path.insert(1, "%s/lib/spack" % os.environ["SPACK_ROOT"])
 import ruamel.yaml as yaml
 from spack.spec import Spec
 
+PROOT=os.path.dirname(os.path.dirname(os.path.dirname(os.environ["SPACK_ROOT"])))
 
 def log_call(f):
     """ decorator to log calls to functions at debug level """
@@ -563,11 +564,6 @@ class ups_to_spack:
         else:
             self.pdrl = None
         self.all_flavors = (
-            ("Darwin64bit+13.4.0", ""),
-            ("Darwin64bit+14.5.0", ""),
-            ("Darwin64bit+15.6.0", ""),
-            ("Darwin64bit+16.7.0", ""),
-            ("Linux64bit+2.6-2.5", ""),
             ("Linux64bit+2.6-2.12", ""),
             ("Linux64bit+3.10-2.17", ""),
         )
@@ -767,14 +763,56 @@ endif()
         f.write('message("${CMAKE_CURRENT_LIST_FILE} ends:")\n')
         f.close()
 
+    def quals_to_flags(self, pkg):
+        rl = [] 
+        quals = pkg.quals
+        if 0 <=  quals.find("debug"):
+            rl.append("-g")
+        if 0 <= quals.find("opt"):
+            rl.append("-O3")
+        flags = " ".join(rl)
+
+        flags = """ 'cxxflags="%s"' 'cflags="%s"' """ % (flags, flags)
+
+        comp = pkg.spack_comp().replace('-','@')
+
+        if comp:
+            flags = "%s %% %s" % (flags, comp)
+
+        return flags
+        
+
     @log_call
     def install(self, pkg):
-        os.system("spack install %s@%s" % (pkg.name, pkg.ver))
-        f = os.popen("spack find --very-long %s@%s" % (pkg.name, pkg.ver), "r")
+
+        immeddeps = self.parsed_ups_dependencies([pkg] ,immed=True)
+        dlist = []
+        myarch = pkg.spack_arch()
+        for dpkg in immeddeps:
+             if dpkg.spack_arch() == myarch:
+                 dpkg.topbits()
+                 dlist.append("^ %s@%s arch=%s" % (dpkg.prod, dpkg.dotver, dpkg.spack_arch()))
+
+        flags = self.quals_to_flags(pkg)
+
+
+        # install with specific dependencies.
+        cmd = "spack install --reuse --no-checksum ups_to_spack.%s@%s arch=%s %s %s"  % (
+                pkg.prod, pkg.dotver,  pkg.spack_arch(), flags, " ".join(dlist))
+
+        logging.warning("running: %s" % cmd)
+        os.system(cmd)
+        f = os.popen("spack find --very-long %s@%s arch=%s" % (pkg.prod, pkg.dotver, pkg.spack_arch()), "r")
         ll = f.readlines()
         f.close()
-        hash = ll[-2].split(" ")[0]
-        return hash
+
+        if len(ll) > 1:
+            hash = ll[-1].split(" ")[0]
+            return hash
+        else:
+            if pkg.backuprecipe:
+                os.rename(pkg.backuprecipe+".bak", pkg.backuprecipe)
+            raise SystemExit("Couldn't migrate %s %s -f %s" % (pkg.prod, pkg.ver, pkg.flav))
            
     @log_call
     def migrate_one(self, pkg, recurseflag = False ):
@@ -793,6 +831,7 @@ endif()
         if not thash:
             self.make_recipe(pkg)
             nhash = self.install(pkg)
+            self.add_cached_hash(pkg, nhash)
             self.convert_table(pkg, nhash)
         else:
             nhash = thash
@@ -898,11 +937,18 @@ endif()
             #
             # just stomp on existing recipes...
             #
+            pf = uts_recipedir + "/package.py"
+            pkg.backuprecipe = None
+            try:
+                os.rename(pf, pf+".bak")
+                pkg.backuprecipe = pf
+            except:
+                pass
             #if (os.path.exists(uts_recipedir + "/package.py")):
             #    logging.debug("found existing recipe file for %s " % pkg)
             #    return
 
-            recipe_f = open(uts_recipedir + "/package.py", "w")
+            recipe_f = open(pf, "w")
             recipe_f.write("# fake recipe from ups_to_spack\n")
             recipe_f.write(
                 "from spack import *\nimport os\n\nclass %s(Package):\n    pass\n"
@@ -911,15 +957,34 @@ endif()
             recipe_f.write("""
 
     def url_for_version(self, version):\n
-        url = 'https://cdcvs.fnal.gov/cgi-bin/git_archive.cgi/cvs/projects/{0}.v{1}.tbz2'
-        return url.format(self.name, version.underscored)
+        url = 'file:///tmp/empty.tar'
+        return url
 
-    def install(self, prefix):
-        v = "v"+self.spec.version.underscored
-        import os
-        os.system("cpio -dump %{prodarea}s/{0}/%{prodpath}s {1}".format(v, prefix))
+
+    def install(self, spec, prefix):
+        v = "v"+str(spec.version.underscored)
+        if os.path.isdir("%(prodarea)s"):
+            os.system("cd %(prodarea)s{0}%(prodpath)s && find . -print | cpio -dumpv {1}".format(v, prefix))
         
-""")
+""" % {"prodarea":prodarea, "prodpath":prodpath})
+
+            # we need some variants to make the concretizer happy, and in the case of boost,
+            # quite a few
+            vmap = {
+                "boost": [ "atomic", "chrono", "date_time", "container", "context", "contract",
+                    "coroutine", "exception", "fiber", "filesystem", "graph", "graph_parallel",
+                    "iostreams", "json", "locale", "log", "math", "mpi", "nowide", "program_options",
+                    "python", "random", "regex", "serialization", "signals", "stacktrace", "system",
+                    "test", "thread", "timer", "type_erasure", "wave"],
+                "libxml2": ["python"],
+                "python": ["shared"],
+                "sqlite": ["column_metadata"]
+            }
+
+            if pkg.prod in vmap:
+                for vari in vmap[pkg.prod]:
+                    recipe_f.write("\n    variant(\"%s\",default=False)\n" % vari)
+                      
             # include a cxxstd variant if we see a c7 or e19 qualifier...
             if re.search("[ce][0-9]", pkg.quals):
                 recipe_f.write("\n    variant('cxxstd',default='17')\n\n")
@@ -1052,7 +1117,8 @@ endif()
             .replace("${UPS_SOURCE}", "source")
             .replace("${UPS_PROD_FLAVOR}", pkg.flav)
             .replace("${UPS_PROD_QUALIFIERS}", canon_quals(pkg.quals))
-            .replace("${UPS_PROD_NAME_UC}", pkg.prod.upper().replace('-','_')))
+            .replace("${UPS_PROD_NAME_UC}", pkg.prod.upper().replace('-','_'))
+            .replace("${UPS_THIS_DB}", PROOT))
         return tline
 
 
@@ -1801,4 +1867,3 @@ while sys.argv[1][:2] == "--":
 uts = ups_to_spack(pdr=pdr)
 
 uts.migrate_all(sys.argv[1:])
-os.system('spack reindex')
