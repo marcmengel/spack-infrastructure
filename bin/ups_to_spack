@@ -68,11 +68,13 @@ def spack_reindex():
     return "", ""
 
 known_cycle_deps = {}
+depsmap = {}
 
 def filter_cycles(deplines):
     global known_cycle_deps
+    global depsmap
     res=[]
-    d=['','','','','','','','','','','','','','','']
+    d=['','','','','','','','','','','','','','','','','','','','','','','']
     for line in deplines:
         m = re.match("(^[|_ ]*)([^ ]*)", line)
         depth = len(m.group(1))/3
@@ -106,6 +108,7 @@ def filter_cycles(deplines):
 
     return res
 
+@remember
 def ups_depend(prod, ver, flav, qual, hosttype=''):
     """ run ups depend, return list of output lines """
     r1 = ups_x("depend -B", prod, ver, flav, qual, hosttype)
@@ -119,6 +122,7 @@ def canon_quals(qual):
     ll.sort()
     return ":".join(ll)
 
+@remember
 def ups_x(what, prod, ver, flav, qual, hosttype=''):
     """ run ups what, return list of output lines """
 
@@ -428,6 +432,7 @@ class package:
         tf_2 = "%s-%s" % (f_osrel, f_libc)
 
         if f_os[:3] == "Dar":
+            tf_2 = re.sub("^-.*", "yosemite", tf_2)
             tf_2 = re.sub("13[-.].*", "mavericks", tf_2)
             tf_2 = re.sub("14[-.].*", "yosemite", tf_2)
             tf_2 = re.sub("15[-.].*", "elcapitan", tf_2)
@@ -444,7 +449,7 @@ class package:
 
         # excessive intel-centrism...
         if f_os.find("64bit") > 0:
-            tf_3 = "x86_64"
+            tf_3 = "x86_64_v2"
         else:
             tf_3 = "x86"
 
@@ -508,15 +513,15 @@ class package:
 
     def spack_comp(self, splitpart = -1):
         self.topbits()
-        res = "gcc-4.1.1"  # sl5 compiler by default??
-        if self.top_flav.find("2.17") >= 0:
-            res = "gcc-4.8.5"
-        if self.top_flav.find("2.12") >= 0:
-            res = "gcc-4.4.7"
+        res = "gcc-4.8.5"
         if self.top_quals.find("c7") >= 0:
             res = "clang-7.0.0"
         if self.top_quals.find("c2") >= 0:
             res = "clang-5.0.1"
+        if self.top_quals.find("e21") >= 0:
+            res= "gcc-12.2.0"
+        if self.top_quals.find("e20") >= 0:
+            res= "gcc-9.3.0"
         if self.top_quals.find("e19") >= 0:
             res= "gcc-8.2.0"
         if self.top_quals.find("e18") >= 0:
@@ -772,7 +777,7 @@ endif()
         return hash
            
     @log_call
-    def migrate_one(self, pkg, recurseflag = False):
+    def migrate_one(self, pkg, recurseflag = False ):
 
         if pkg.keyval() in self.already_done:
             logging.debug("migrate_one: already done (by us): %s" % pkg)
@@ -785,20 +790,12 @@ endif()
         thash = self.get_cached_hash_once(pkg)
         logging.debug("get_cached_hash_one returns %s for %s" % (thash, pkg))
 
-        if thash:
-            nhash = thash
-        else:
-            nhash = self.make_spec(pkg)
-
-        if nhash:
-            self.known_hashes[pkg.keyval()] = nhash
-
         if not thash:
-            self.add_cached_hash(pkg, nhash)
             self.make_recipe(pkg)
             nhash = self.install(pkg)
             self.convert_table(pkg, nhash)
         else:
+            nhash = thash
             logging.debug("already done (elsewhere): %s" % pkg)
 
         return nhash
@@ -848,6 +845,8 @@ endif()
 
     @log_call
     def make_recipe(self, pkg):
+        pkg.topbits()
+        pkg.prodbits()
         builtin_recipedir = "%s/var/spack/repos/builtin/packages/%s" % (
             os.environ["SPACK_ROOT"],
             pkg.prod,
@@ -868,7 +867,17 @@ endif()
 
         self.get_namespace(pkg)
         # pick out path parts before/after version...
-        prodarea, prodpath = pkg.prod_dir.split(pkg.ver)
+        if pkg.prod_fq_dir:
+           pd = pkg.prod_fq_dir
+        elif pkg.prod_dir:
+           pd = pkg.prod_dir
+        else:
+           pd = ""
+
+        if pd and pd.find(pkg.ver) > 0:
+            prodarea, prodpath = pd.split(pkg.ver)
+        else:
+            prodarea = prodpath = ""
 
         # always make a recipe in ups_to_spack for this instance, even if
         # there already is one, we should use ours for setups in newer
@@ -915,6 +924,7 @@ endif()
             if re.search("[ce][0-9]", pkg.quals):
                 recipe_f.write("\n    variant('cxxstd',default='17')\n\n")
 
+            # script ones need to be extendable..
             if pkg.prod in ("python","ruby","perl"):
                 recipe_f.write("\n    extendable = True\n")
 
@@ -995,278 +1005,18 @@ endif()
         logging.debug("basedir is now %s " % (basedir))
         return basedir
 
-    def get_specfile(self, pkg):
-        basedir = self.get_basedir(pkg)
-        specfile = "%s/.spack/spec.yaml" % basedir
-        return specfile
-
     @log_call
-    def make_spec(self, pkg):
-        """ 
-           make the .spack/spec.yaml file and possibly a minimal recipe for 
-           a given ups product.  This involves going through the ups dependencies
-           of the package, adding the direct dependencies to the spec and 
-           recipe, and adding all the dependencies to the spec.yaml file
-           We use get_hash, above, to find the hash 
-           We're using the yaml library from spack to write the .yaml file
-           from a dictionary
-        """
-
-        # make sure our package is all filled out
-        pkg.topbits()
-        pkg.prodbits()
-
-        basedir = self.get_basedir(pkg)
-        specfile = self.get_specfile(pkg)
-
-        if not os.access(os.path.dirname(specfile), os.R_OK):
-            os.makedirs(os.path.dirname(specfile))
-
-        # tag directory as being made by .ups_to_spack
-        open("%s/.ups_to_spack" % basedir,"w").close()
-
-        logging.debug("making symlinks in basedir %s from %s" % (basedir,pkg.prod_fq_dir))
-        # link in bin/ lib/ etc. dirs from ups directory so links paths might work
-        if pkg.prod_fq_dir:
-            for d in glob.glob("%s/*" % pkg.prod_fq_dir):
-                try:
-                    destbase = os.path.basename(d)
-                    destdir = self.do_pdr(os.path.dirname(d))
-                    logging.debug(" symlink(%s/%s, %s/%s)" % (destdir,destbase, basedir, destbase))
-                    os.symlink("%s/%s" % (destdir,destbase), "%s/%s" % (basedir, destbase))
-                except:
-                    logging.exception("do_pdr/symlink")
-                    pass
-
-        if pkg.prod_dir:
-            for dfmt in ("%s/Modules", "%s/include"):
-                d = dfmt % pkg.prod_dir
-                if os.path.isdir(d):
-                    try:
-                        destbase = os.path.basename(d)
-                        destdir = self.do_pdr(os.path.dirname(d))
-                        logging.debug(" symlink(%s/%s, %s/%s)" % (destdir,destbase, basedir, destbase))
-                        os.symlink("%s/%s" % (destdir,destbase), "%s/%s" % (basedir, destbase))
-                    except OSError:
-                        pass
-                    except:
-                        raise
-        
-
-        tfl = pkg.spack_arch().split("-")
-
-        if not pkg.namespace:
-            self.get_namespace(pkg)
-
-        # create base spec file structure for the .yaml file writer
-        params = {
-            "cppflags": [],
-            "cxxflags": [],
-            "ldflags": [],
-            "cflags": [],
-            "fflags": [],
-            "ldlibs": [],
-        }
-
-        # things with c7 or e19 should have a cxxstd=17...
-        if re.search("[ce][0-9]", pkg.quals):
-             params['cxxstd'] = '17'
-
-        if re.search("debug", pkg.quals):
-            params['cppflags'] = ['-g']
-            params['cflags'] = ['-g']
-
-        spec = {
-            "spec": [
-                {
-                    pkg.prod: {
-                        "version": pkg.dotver,
-                        "arch": {
-                            "platform": tfl[0],
-                            "platform_os": tfl[1],
-                            "target": tfl[2],
-                        },
-                        "compiler": {
-                            "name": pkg.spack_comp(0),
-                            "version": pkg.spack_comp(1),
-                        },
-                        "namespace": pkg.namespace,
-                        "parameters": params,
-                    }
-                }
-            ]
-        }
-
-        dependlines = pkg.dependlines()
-
-        logging.debug("qualfiers: %s" % pkg.quals)
-        logging.debug("dependlines: %s" % repr(dependlines))
-
-        if len(dependlines) > 1:
-            # only add a dependencies section if there are any dependencies
-            spec["spec"][0][pkg.prod]["dependencies"] = {}
-
-            dependlines = dependlines[1:]
-            dependlines.reverse()
-
-            for line in dependlines:
-                if re.match("^\\|__[a-zA-Z]", line):
-                    # it is an immediate dependency
-                    logging.debug("immediate dependency: |%s| " % line)
-                    dpkg = package(depline=line, top_flav = pkg.top_flav, top_quals = pkg.top_quals)
-
-                    if not dpkg.namespace:
-                        self.get_namespace(dpkg)
-
-                    if not dpkg.prod:
-                        continue
-
-                    # get the hash for dependency
-
-                    dhash = self.get_cached_hash(dpkg, True)
-
-                    if not dhash:
-                        # check for unqualified
-                        logging.debug("no hash? checking for unqualified...")
-                        save = dpkg.quals
-                        dpkg.quals = ''
-                        dhash = self.get_cached_hash(dpkg, True)
-                        dpkg.quals = save
-                 
-
-                    if not dhash:
-                        print("known_hashess: %s" % self.known_hashes)
-                        raise Exception("cannot add dependency %s -- no entry for |%s|" %(dpkg, dpkg.keyval()))
-
-                    spec["spec"][0][pkg.prod]["dependencies"][dpkg.prod] = {
-                        "hash": dhash,
-                        "type": ["build", "link", "run"],
-                    }
-
-            self.depcache[pkg.keyval()] = spec["spec"][0][pkg.prod]["dependencies"]
-            specl = []
-            done_already = set()
-            done_already.add(pkg.prod)
-            for line in dependlines:
-
-                logging.debug("general dependency: |%s| " % line)
-
-                dpkg = package(depline=line, top_flav = pkg.top_flav, top_quals=pkg.top_quals)
-
-
-                # suppress duplicates
-                if dpkg.keyval() in done_already:
-                    continue
-                done_already.add(dpkg.keyval())
-
-                dpkg.topbits()
-                #
-                # again dependencies should have already been migrated, so this should just
-                # lookup the hash for the dependency.
-                #
-                dhash = self.get_cached_hash(dpkg, False)
-
-                if not dhash:
-                    # try unqualified...
-                    logging.debug("retry without quals")
-                    dpkg.top_quals=""
-                    dhash = self.get_cached_hash(dpkg, False)
-
-                if not dhash:
-                    logging.debug(
-                        "skipping dependency %s -- no hash"
-                        % repr((dpkg.prod, dpkg.ver, dpkg.flav, dpkg.quals))
-                    )
-                    continue
-
-                tfl = pkg.spack_arch().split("-")
-
-                if not dpkg.namespace:
-                    self.get_namespace(dpkg)
-
-                params = {
-                    "cppflags": [],
-                    "cxxflags": [],
-                    "ldflags": [],
-                    "cflags": [],
-                    "fflags": [],
-                    "ldlibs": [],
-                }
-
-                # things with c7 or e19 should have a cxxstd=17...
-                if re.search("[ce][0-9]", dpkg.quals):
-                    params['cxxstd'] = '17'
-
-                if re.search("debug", dpkg.quals):
-                    params['cppflags'] = ['-g']
-                    params['cflags'] = ['-g']
-
-                specl.append(
-                    {
-                        dpkg.prod: {
-                            "version": dpkg.dotver,
-                            "hash": dhash,
-                            "parameters": params,
-                            "arch": {
-                                "platform": tfl[0],
-                                "platform_os": tfl[1],
-                                "target": tfl[2],
-                            },
-                            "namespace": dpkg.namespace,
-                            "compiler": {
-                                "name": dpkg.spack_comp(0),
-                                "version": dpkg.spack_comp(1),
-                            },
-                            "dependencies": self.depcache.get(dpkg.keyval(),{}).copy(),
-                        }
-                    }
-                )
-
-            specl.reverse()
-            spec["spec"] = spec["spec"] + specl
-
-        logging.debug("writing specfile %s" % specfile)
-        if not os.path.exists(os.path.dirname(specfile)):
-            os.makedirs(os.path.dirname(specfile))
-        sf = open(specfile, "w")
-        sf.write(yaml.dump(spec, default_style="1"))
-        sf.close()
-
-        sp =  Spec.from_dict(spec)
-        hashstr = sp.dag_hash()
-
-        # add spec to index directly -- 
-        # NOTE: should do some sort of locking here
-        #
-        dbpath = "%s/../../../.spack-db/index.json" % os.environ['SPACK_ROOT']
-        dbf = open(dbpath, 'r')
-        db = json.load(dbf)
-        dbf.close()
-        # need to not have a list at that layer unlike spec.yaml...
-        if (isinstance(spec['spec'], list)):
-            spec['spec'] = spec['spec'][0]
-        db['database']['installs'][hashstr] = spec
-        dbf = open(dbpath, 'w')
-        json.dump(db,dbf)
-        dbf.close()
-
-        return hashstr 
-
+    @remember
     def use_spack_for_hash(self, pkg):
-        import spack.spec
- 
-        try:
-            specfile = self.get_specfile(pkg)
-            st = open(specfile, "r")
-            # sp = spack.spec.Spec.from_yaml(st)
-            data = yaml.load(st)
-            sp = Spec.from_dict(data)
-            return sp.dag_hash()
-        except Exception as e1:
-            logging.debug("Got exception: %s trying to get hash for specfile %s package  %s \n" %(e1, specfile,  pkg))
-            dn = os.path.dirname(os.path.dirname(os.path.dirname(specfile)))
-            print("look at: ls %s" % dn)
-            os.system("ls %s" % dn)
+        pkg.topbits()
+        f = os.popen("spack find --long %s@%s %s" % 
+                 (pkg.prod, pkg.dotver, pkg.spack_arch() ),
+             "r")
+        ll = f.readlines()
+        f.close()
+        if len(ll) > 0:
+            return ll[1].split(" ")[0]
+        else:
             return None
         
     def unpack(self, s):
@@ -1966,8 +1716,9 @@ proc getenv { x } {
         ulf.close()
         return res
 
-    def parsed_ups_dependencies(self, pkgl):
+    def parsed_ups_dependencies(self, pkgl, immed=False):
         res = []
+        immedl = []
         for pkg in pkgl:
             if pkg.flav == "NULL":
                 flist = self.all_flavors
@@ -1985,6 +1736,8 @@ proc getenv { x } {
                     )
                     logging.debug("pud: pkg: %s" % p)
                     res.append(p)
+                    if depth == 1:
+                        immedl.append(p)
 
         
         res.reverse()
@@ -1993,7 +1746,10 @@ proc getenv { x } {
         #res.sort(key=lambda x: "%2d:%s" % (99-x.depth,":".join((x.prod, x.ver, x.quals,x.top_flav,x.top_quals))))
         #res = self.list_uniq(res)
 
-        return res
+        if immed:
+            return immedl
+        else:
+            return res
 
     def list_uniq(self, res):
         ''' de-duplicate sorted list '''
