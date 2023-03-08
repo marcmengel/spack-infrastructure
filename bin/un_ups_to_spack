@@ -6,14 +6,14 @@ then
     echo "spack setup-env.sh script first."
     exit 1
 fi
-cd $SPACK_ROOT/../../..
 
-#clean out opt/ directories:
-find . -name .ups_to_spack -print |
-    sed -e s/.ups_to_spack// |
-    xargs rm -rf 
-
-cd $SPACK_ROOT
+#uninstall spack packages in ups_to_spack namespace
+spack find --long -N | 
+    grep ' ups_to_spack\.' | 
+    while read hash p
+    do 
+        spack uninstall -y --dependents $p/$hash
+    done
 
 # clean out module files
 find $SPACK_ROOT/share/spack/modules $SPACK_ROOT/share/spack/lmod -type f -print | 
@@ -22,6 +22,8 @@ find $SPACK_ROOT/share/spack/modules $SPACK_ROOT/share/spack/lmod -type f -print
 
 # remove hash cache
 
+cd $SPACK_ROOT
+echo "in $PWD"
 rm var/ups_to_spack.cache
 rm -rf  var/spack/repos/ups_to_spack/packages/*
 
