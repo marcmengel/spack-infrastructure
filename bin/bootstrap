@@ -28,22 +28,36 @@ parse_args() {
     spackver=${3:-$default_spack_version}
 }
 
+detail_log() {
+    exec 3>&1 > /tmp/bootstrap$$.log 2>&1
+    echo "Putting detail log in /tmp/bootstrap$$.log" >&3 
+}
+message() {
+    echo $* >&3
+}
+
 main() {
     parse_args "$@"
+
+    detail_log
 
     mkdir -p $dest/spack-infrastructure/$ver
     cd $dest
 
+    message "Cloning FNALssi spack-infrastructure repository"
     git clone -b $ver https://github.com/FNALssi/spack-infrastructure.git spack-infrastructure/$ver/NULL/
 
     PATH=$dest/spack-infrastructure/$ver/NULL/bin:$PATH
 
+    message "Setting up spack"
     make_spack --spack_release $spackver $with_padding --minimal -u $dest
 
     source $dest/setup-env.sh
 
+    message "Adding local compilers"
     spack compiler find --scope=site
 
+    message "Declaring our spack-infrastructure copy to spack"
     cd $dest/spack-infrastructure/$ver/NULL && bin/declare_simple spack-infrastructure $ver
 }
 

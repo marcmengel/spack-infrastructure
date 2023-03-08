@@ -1869,4 +1869,11 @@ while sys.argv[1][:2] == "--":
 
 uts = ups_to_spack(pdr=pdr)
 
+if not os.path.exists("/tmp/empty.tar"):
+    pid = os.getpid()
+    d = "/tmp/d{0}".format(pid)
+    os.mkdir(d)
+    os.system("cd {0} && tar cf /tmp/empty.tar .".format(d))
+    os.rmdir(d)
+
 uts.migrate_all(sys.argv[1:])
