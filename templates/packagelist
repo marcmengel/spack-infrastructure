@@ -91,7 +91,8 @@ ncurses:ncurses:ncurses-devel
 ninja-build:ninja:ninja-build
 openblas:openblas:openblas-devel
 openssh:openssh:openssh
-openssl*-libs:openssl:openssl*-devel
+openssl-libs:openssl:openssl-devel
+openssl11-libs:openssl:openssl11-devel
 patchelf:patchelf:patchelf
 pcre2:pcre2:pcre2-devel
 pcre:pcre:pcre-devel
@@ -99,7 +100,8 @@ perl-Data-Dumper:perl-data-dumper:perl-Data-Dumper
 perl:perl:perl-devel
 pkgconf-pkg-config:pkg-config:pkgconf-pkg-config
 pkgconfig:pkgconf:pkgconfig
-python.*:python:python.*-devel
+python:python:python-devel
+python3:python:python3-devel
 readline:readline:readline-devel
 rhash:rhash:rhash-devel
 sqlite:sqlite:sqlite-devel
