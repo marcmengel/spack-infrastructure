@@ -498,7 +498,7 @@ class package:
             f = os.popen(cmd,"r")
             self.prod_fq_dir = f.read()
             f.close()
-            self.prod_fq_dir = self.prod_fq_dir.strip()
+            self.prod_fq_dir = self.prod_fq_dir.strip().replace("\n","")
             logging.debug("got fq_dir %s" % self.prod_fq_dir)
 
     def topbits(self):
@@ -963,8 +963,11 @@ endif()
 
     def install(self, spec, prefix):
         v = "v"+str(spec.version.underscored)
-        if os.path.isdir("%(prodarea)s"):
+        if os.path.isdir("%(prodarea)s{0}%(prodpath)s"):
             os.system("cd %(prodarea)s{0}%(prodpath)s && find . -print | cpio -dumpv {1}".format(v, prefix))
+        else:
+            # UPS packages can be empty, spack wants *something* there...
+            os.system("echo Converted empty UPS package > {0}/README".format(prefix))
         
 """ % {"prodarea":prodarea, "prodpath":prodpath})
 
