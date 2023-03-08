@@ -40,13 +40,14 @@ monitor() {
    box="[                                                  ]"
    lin="[==================================================]"
 
-   printf "$box\r" >&3
+   printf "%3d%%$box\r" 0 >&3
    while :
    do
        duf=$(du -b $f)
        ds="${duf%$f}"
-       dpp1=$(expr $ds / $sd + 1)
-       printf "${lin:0:$dpp1}\r" >&3
+       dpp1=$(expr $ds / $sd )
+       dpp2=$(expr $dpp1 / 2 + 1)
+       printf "%3d%%${lin:0:$dpp2}\r" $dpp1 >&3
        sleep 2
    done
 }
@@ -56,7 +57,7 @@ start_monitor() {
 }
 stop_monitor() {
  [ -n "$monitor_pid" ] && kill $monitor_pid 
- clr="                                                    "
+ clr="                                                         "
  printf "\r$clr\r" >&3
 }
 message() {
@@ -88,6 +89,7 @@ main() {
 
     message "Declaring our spack-infrastructure copy to spack"
     cd $dest/spack-infrastructure/$ver/NULL && bin/declare_simple spack-infrastructure $ver
+    stop_monitor
 }
 
 main "$@"
