@@ -299,8 +299,14 @@ do
     continue
   fi
 
+if $do_cvmfs
+then
   # also find any cvmfs versions
   cvmfsversions=`get_cvmfs_spack_versions $spp`
+else
+  cvmfsversions=""
+fi
+
 
   for pkg in $p
   do
