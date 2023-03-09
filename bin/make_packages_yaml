@@ -35,7 +35,7 @@ runversion() {
        then
            cmd=`ls /usr/bin/python* | grep -v config | tail -1`
        fi
-       ($cmd --version || $cmd -v) < /dev/null 2>&1 | 
+       ($cmd --version || $cmd -v || $cmd version) < /dev/null 2>&1 | 
           strings | 
           sed -e 's/\+*//' -e 's/64.bit//' | 
           grep -i $1 | 
@@ -239,7 +239,11 @@ EOF
 preamble() {
   $did_preamble && return
   did_preamble=true
-  echo "  $spp:"               >&3
+  echo preamble: $spp $oldspp
+  if [ $spp != $oldspp ]
+  then
+    echo "  $spp:"               >&3
+  fi
   $want_force_target || return 0
   echo "    require:"     >&3
   echo "      - one_of: [\"target=$preferred_target\"]"     >&3
@@ -249,6 +253,7 @@ preamble() {
   [ -z "$compiler2" ] || echo "        - \"%$compiler2\"" >&3
 }
 
+oldspp="xxx"
 for p in `grep -Eve '^[[:space:]]*#' "$src"`
 do
   did_preamble=false
@@ -407,4 +412,5 @@ fi
     # Ensure we have an entry if we wish to constrain the target.
     $want_force_target && preamble
   fi
+  oldspp=$spp
 done
