@@ -118,7 +118,7 @@ create_spack() {
                echo "turning on padding." && 
                echo "    padded_length: 255" >> $SPACK_ROOT/etc/spack/config.yaml;;
             esac
-            spack config update config
+            spack config --scope=site  update --yes-to-all config
             export plat="target=`uname -i` os=`spack arch --operating-system`"
             spack mirror add --scope site fnal $binary_cache
             spack buildcache update-index  -d $binary_cache
