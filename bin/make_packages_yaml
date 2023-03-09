@@ -239,7 +239,6 @@ EOF
 preamble() {
   $did_preamble && return
   did_preamble=true
-  echo preamble: $spp $oldspp
   if [ $spp != $oldspp ]
   then
     echo "  $spp:"               >&3
