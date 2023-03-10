@@ -963,7 +963,7 @@ endif()
 
     def install(self, spec, prefix):
         v = "v"+str(spec.version.underscored)
-        if os.path.isdir("%(prodarea)s{0}%(prodpath)s"):
+        if os.path.isdir("%(prodarea)s{0}%(prodpath)s".format(v)):
             os.system("cd %(prodarea)s{0}%(prodpath)s && find . -print | cpio -dumpv {1}".format(v, prefix))
         else:
             # UPS packages can be empty, spack wants *something* there...
