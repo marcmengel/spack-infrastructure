@@ -30,7 +30,10 @@ parse_args() {
 
 detail_log() {
     logfile=/tmp/bootstrap$$.log 
-    exec 3>&1 > $logfile 2>&1
+    # use fd 3 for messages to user, send stdout and stderr to log
+    # redirect stdin from /dev/null, so anything that tries to prompt
+    # for input will fail and not hang because no message gets to the user
+    exec 3>&1 > $logfile 2>&1 < /dev/null
     echo "Putting detail log in /tmp/bootstrap$$.log" >&3 
 }
 
@@ -66,11 +69,20 @@ message() {
     start_monitor $logfile 458
 }
 
+check_bootstrap() {
+    if [ `spack find | egrep 'patchelf|spack-infrastructure' | wc -l` = 2 ]
+    then
+        :
+    else
+        message "Bootstrap did NOT complete properly, please attach logfile to a Servicedesk ticket"
+        exit 1
+    fi
+}
+
 main() {
     parse_args "$@"
 
     detail_log
-
     mkdir -p $dest/spack-infrastructure/$ver
     cd $dest
 
@@ -79,17 +91,19 @@ main() {
 
     PATH=$dest/spack-infrastructure/$ver/NULL/bin:$PATH
 
-    message "Setting up spack"
+    message "Setting up with make_spack"
     make_spack --spack_release $spackver $with_padding --minimal -u $dest
 
+    message "Finding compilers"
     source $dest/setup-env.sh
 
-    message "Adding local compilers"
     spack compiler find --scope=site
 
-    message "Declaring our spack-infrastructure copy to spack"
     cd $dest/spack-infrastructure/$ver/NULL && bin/declare_simple spack-infrastructure $ver
+
     stop_monitor
+   
+    check_bootstrap
 }
 
 main "$@"
