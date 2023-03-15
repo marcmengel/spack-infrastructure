@@ -968,6 +968,7 @@ endif()
         else:
             # UPS packages can be empty, spack wants *something* there...
             os.system("echo Converted empty UPS package > {0}/README".format(prefix))
+        os.system("cd {0} && ln -s . .%(prodpath)s".format(prefix))
         
 """ % {"prodarea":prodarea, "prodpath":prodpath})
 
@@ -1114,8 +1115,8 @@ endif()
     def fix_ups_vars(self, tline, pkg):
         """ replace common ups table file variables """
         tline = (tline
-            .replace("${UPS_PROD_DIR}", self.do_pdr(pkg.prod_dir))
-            .replace("${UPS_UPS_DIR}", self.do_pdr(pkg.prod_dir) + "/ups")
+            .replace("${UPS_PROD_DIR}","{prefix}"  )
+            .replace("${UPS_UPS_DIR}", "{prefix}/ups")
             .replace("${UPS_PROD_VERSION}", pkg.ver)
             .replace("${UPS_SOURCE}", "source")
             .replace("${UPS_PROD_FLAVOR}", pkg.flav)
@@ -1139,6 +1140,7 @@ endif()
         if val.find("$") >= 0:
             val = re.sub("\\$\\{(\\w+)\\}","%(\\1)s",val)
             val = val + "% self.env_get(env)"
+        val = val.replace("{prefix}",'"+str(self.spec.prefix)+"')
         val = val.replace(pkg.dotver,'"+str(self.spec.version)+"')
         val = val.replace(pkg.ver,'v"+str(self.spec.version.underscored)+"')
         val = val.replace(pkg.prod,'"+self.spec.name+"')
@@ -1478,25 +1480,25 @@ proc getenv { x } {
                     # to the shell they use them inline, so we need to
                     # both set them in tcl and generate them...
                     tcl_out.write(
-                        "setenv %s_DIR %s\n" % (pkg.prod.upper().replace('-','_'), self.do_pdr(pkg.prod_dir))
+                        "setenv %s_DIR %s\n" % (pkg.prod.upper().replace('-','_'), '{prefix}')
                     )
                     tcl_out.write(
-                        "set  ::env(%s_DIR) %s\n" % (pkg.prod.upper().replace('-','_'), self.do_pdr(pkg.prod_dir))
+                        "set  ::env(%s_DIR) %s\n" % (pkg.prod.upper().replace('-','_'), '{prefix}')
                     )
                     tcl_out.write(
-                        "set  ::env(%s_FQ_DIR) %s\n" % (pkg.prod.upper().replace('-','_'), self.do_pdr(pkg.prod_dir))
+                        "set  ::env(%s_FQ_DIR) %s\n" % (pkg.prod.upper().replace('-','_'), '{prefix}')
                     )
                     tcl_out.write(
-                        "setenv %s_DIR %s\n" % (pkg.prod.upper().replace('-','_'), self.do_pdr(pkg.prod_dir))
+                        "setenv %s_DIR %s\n" % (pkg.prod.upper().replace('-','_'), '{prefix}')
                     )
                     tcl_out.write(
-                        "setenv %s_FQ_DIR %s\n" % (pkg.prod.upper().replace('-','_'), self.do_pdr(pkg.prod_dir))
+                        "setenv %s_FQ_DIR %s\n" % (pkg.prod.upper().replace('-','_'), '{prefix}')
                     )
                     lmod_out.write(
-                        'setenv("%s_DIR","%s");\n' % (pkg.prod.upper().replace('-','_'), self.do_pdr(pkg.prod_dir))
+                        'setenv("%s_DIR","%s");\n' % (pkg.prod.upper().replace('-','_'), '{prefix}')
                     )
                     lmod_out.write(
-                        'setenv("%s_FQ_DIR","%s");\n' % (pkg.prod.upper().replace('-','_'), self.do_pdr(pkg.prod_dir))
+                        'setenv("%s_FQ_DIR","%s");\n' % (pkg.prod.upper().replace('-','_'), '{prefix}')
                     )
                 continue
 
@@ -1520,9 +1522,9 @@ proc getenv { x } {
                     if d['var'] == "":
                         d['var'] = "_DIR"
                     if d['value'] == "":
-                        d['value'] = self.do_pdr(pkg.prod_dir)
+                        d['value'] = '{prefix}'
                     else:
-                        d['value'] = "%s/%s" % (self.do_pdr(pkg.prod_dir),d['value'])
+                        d['value'] = "%s/%s" % ('{prefix}',d['value'])
 
                     recipe_out.write("env.set('%s%s',%s)\n" % (pkg.prod.upper().replace('-','_'),d["var"], self.fix_env_vars_python(pkg, d["value"])))
                     tcl_out.write("set ::env(%s%s) %s\n" % (pkg.prod.upper().replace('-','_'),d["var"], self.fix_env_vars_tcl(d["value"])))
@@ -1617,22 +1619,22 @@ proc getenv { x } {
                     if d["flags"] == "UPS_ENV":
                         recipe_out.write("env.set('UPS_PROD_NAME','%s')\n" % pkg.prod)
                         tcl_out.write("set ::env(UPS_PROD_NAME) %s\n" % pkg.prod)
-                        tcl_out.write("set ::env(UPS_PROD_DIR) %s\n" % self.do_pdr(pkg.prod_dir))
+                        tcl_out.write("set ::env(UPS_PROD_DIR) %s\n" % '{prefix}')
                         tcl_out.write("setenv UPS_PROD_NAME %s\n" % pkg.prod)
-                        tcl_out.write("setenv UPS_PROD_DIR %s\n" % self.do_pdr(pkg.prod_dir))
-                        recipe_out.write("env.set('UPS_UPS_DIR','%s')\n" %  self.do_pdr(pkg.prod_dir))
-                        tcl_out.write("set ::env(UPS_UPS_DIR) %s/ups\n" % self.do_pdr(pkg.prod_dir))
-                        tcl_out.write("setenv UPS_UPS_DIR %s/ups\n" % self.do_pdr(pkg.prod_dir))
-                        recipe_out.write("env.set('VERSION','%s')\n" %  self.do_pdr(pkg.prod_dir))
+                        tcl_out.write("setenv UPS_PROD_DIR %s\n" % '{prefix}')
+                        recipe_out.write("env.set('UPS_UPS_DIR','%s')\n" %  '{prefix}')
+                        tcl_out.write("set ::env(UPS_UPS_DIR) %s/ups\n" % '{prefix}')
+                        tcl_out.write("setenv UPS_UPS_DIR %s/ups\n" % '{prefix}')
+                        recipe_out.write("env.set('VERSION','%s')\n" %  '{prefix}')
                         tcl_out.write("set ::env(VERSION) %s\n" % pkg.dotver)
                         tcl_out.write("setenv VERSION %s\n" % pkg.dotver)
 
                         recipe_out.write("env.set('UPS_PROD_NAME','%s')\n" %  pkg.prod)
                         lmod_out.write('setenv("UPS_PROD_NAME","%s");\n' % pkg.prod)
-                        recipe_out.write("env.set('UPS_PROD_DIR','%s')\n" %  self.do_pdr(pkg.prod_dir))
-                        lmod_out.write('setenv("UPS_PROD_DIR","%s");\n' % self.do_pdr(pkg.prod_dir))
-                        recipe_out.write("env.set('UPS_UPS_DIR','%s')\n" %  self.do_pdr(pkg.prod_dir))
-                        lmod_out.write('setenv("UPS_UPS_DIR","%s/ups");\n' % self.do_pdr(pkg.prod_dir))
+                        recipe_out.write("env.set('UPS_PROD_DIR','%s')\n" %  '{prefix}')
+                        lmod_out.write('setenv("UPS_PROD_DIR","%s");\n' % '{prefix}')
+                        recipe_out.write("env.set('UPS_UPS_DIR','%s')\n" %  '{prefix}')
+                        lmod_out.write('setenv("UPS_UPS_DIR","%s/ups");\n' % '{prefix}')
                         lmod_out.write('setenv("VERSION","%s");\n' % pkg.dotver)
 
                     if d["envvar"]:
