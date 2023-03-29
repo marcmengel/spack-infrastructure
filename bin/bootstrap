@@ -22,7 +22,6 @@ parse_args() {
         x--) shift; break;;
         esac
     done
-    echo "after while: args $*"
     dest=${1:-$PWD}
     ver=${2:-$default_spack_infrastructure_version}
     spackver=${3:-$default_spack_version}

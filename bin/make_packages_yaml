@@ -9,6 +9,7 @@ esac
 os=${2:-`spack arch -o`}
 
 cvmfs_area=/cvmfs/fermilab.opensciencegrid.org/packages/external
+do_cvmfs=false
 src=$dir/templates/packagelist
 optf=$dir/templates/package_opts
 dst=$1/etc/spack/$os/packages.yaml
