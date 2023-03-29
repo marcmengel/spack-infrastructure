@@ -111,7 +111,7 @@ cp $src/etc/spack/packages.yaml $SPACK_ROOT/etc/spack/packages.yaml
 if $padding 
 then 
     echo "turning on padding." 
-    echo "    padded_length: 255" >> $SPACK_ROOT/etc/spack/config.yaml
+    echo "  padded_length: 255" >> $SPACK_ROOT/etc/spack/config.yaml
 fi
 
 echo "installing upstreams.yaml..."
